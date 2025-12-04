@@ -2,7 +2,6 @@ import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
 import { AuthResponse, LoginRequest, RegisterRequest } from './types';
 import { db } from './db';
-import { IUser } from '../models/User';
 
 const JWT_SECRET = process.env.JWT_SECRET || 'your-secret-key-change-in-production';
 

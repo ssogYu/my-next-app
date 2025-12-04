@@ -2,6 +2,7 @@
 
 import { createContext, useContext, useEffect, useState, ReactNode } from 'react';
 import { AuthResponse } from '@/lib/types';
+import { get } from 'http';
 
 interface User {
   id: string;
