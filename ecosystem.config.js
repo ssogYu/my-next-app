@@ -1,9 +1,9 @@
   module.exports = {
     apps: [{
-      name: 'my-app',
+      name: 'my-next-app',
       script: 'npm',
       args: 'start',
-      cwd: '/var/www/my-app',
+      cwd: '/var/www/my-next-app',
       env: {
         NODE_ENV: 'production',
         PORT: 3000
