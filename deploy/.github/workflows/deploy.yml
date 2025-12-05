@@ -1,0 +1,97 @@
+name: 🚀 Auto Deploy to Server
+
+on:
+  push:
+    branches:
+      - master
+      - main
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: 📥 检出代码
+        uses: actions/checkout@v3
+
+      - name: 🔐 配置 SSH
+        uses: webfactory/ssh-agent@v0.7.0
+        with:
+          ssh-private-key: ${{ secrets.SSH_PRIVATE_KEY }}
+
+      - name: ✅ 检查 SSH 连接
+        run: |
+          mkdir -p ~/.ssh
+          ssh-keyscan -H 47.100.82.151 >> ~/.ssh/known_hosts
+          ssh root@47.100.82.151 "echo '✅ SSH 连接成功'"
+
+      - name: 🚀 执行远程部署
+        run: |
+          ssh root@47.100.82.151 << 'EOF'
+          #!/bin/bash
+          set -e
+          
+          echo "========== GitHub Actions 自动部署 =========="
+          cd /var/www/my-next-app
+          
+          echo "[1/7] 拉取最新代码..."
+          git fetch origin
+          git reset --hard origin/master || git reset --hard origin/main
+          
+          echo "[2/7] 安装新依赖..."
+          npm install
+          
+          echo "[3/7] 构建项目..."
+          npm run build
+          
+          echo "[4/7] 重启 PM2 应用..."
+          pm2 stop my-next-app || true
+          pm2 start ecosystem.config.cjs --env production
+          
+          echo "[5/7] 保存 PM2 配置..."
+          pm2 save
+          
+          echo "[6/7] 清理 Nginx 缓存..."
+          sudo rm -rf /var/cache/nginx/*
+          
+          echo "[7/7] 重载 Nginx..."
+          sudo nginx -t && sudo systemctl reload nginx
+          
+          echo ""
+          echo "========== 部署完成！=========="
+          echo "应用状态:"
+          pm2 status
+          
+          echo ""
+          echo "📊 部署统计:"
+          echo "- 提交者: ${{ github.actor }}"
+          echo "- 提交信息: ${{ github.event.head_commit.message }}"
+          echo "- 提交 SHA: ${{ github.sha }}"
+          echo "- 部署时间: $(date '+%Y-%m-%d %H:%M:%S')"
+          EOF
+
+      - name: 📧 发送通知（可选）
+        if: success()
+        uses: 8398a7/action-slack@v3
+        with:
+          status: ${{ job.status }}
+          text: |
+            ✅ 部署成功！
+            分支: ${{ github.ref_name }}
+            提交: ${{ github.event.head_commit.message }}
+            作者: ${{ github.actor }}
+          webhook_url: ${{ secrets.SLACK_WEBHOOK }}
+        continue-on-error: true
+
+      - name: 📧 部署失败通知（可选）
+        if: failure()
+        uses: 8398a7/action-slack@v3
+        with:
+          status: ${{ job.status }}
+          text: |
+            ❌ 部署失败！
+            分支: ${{ github.ref_name }}
+            提交: ${{ github.event.head_commit.message }}
+            作者: ${{ github.actor }}
+          webhook_url: ${{ secrets.SLACK_WEBHOOK }}
+        continue-on-error: true
