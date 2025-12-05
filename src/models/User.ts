@@ -35,14 +35,16 @@ const UserSchema: Schema = new mongoose.Schema({
 }, {
   timestamps: true,
   toJSON: {
-    transform: function(doc, ret) {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    transform: function(doc, ret: Record<string, any>) {
       delete ret.password;
       delete ret.__v;
       return ret;
     },
   },
   toObject: {
-    transform: function(doc, ret) {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    transform: function(doc, ret: Record<string, any>) {
       delete ret.password;
       delete ret.__v;
       return ret;
