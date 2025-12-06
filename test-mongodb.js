@@ -1,7 +1,7 @@
 // MongoDB连接测试脚本
 import { MongoClient } from 'mongodb';
 
-const uri = process.env.MONGODB_URI || 'mongodb://localhost:27017/my-auth-app';
+const uri = process.env.MONGODB_URI || 'mongodb://localhost:27017/my-app';
 
 async function testConnection() {
   const client = new MongoClient(uri);
