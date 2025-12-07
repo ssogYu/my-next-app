@@ -1,54 +1,90 @@
 "use client";
 
-import { useState } from 'react';
-
-export interface WeddingSettings {
-  brideName: string;
-  groomName: string;
-  weddingDate: string;
-  backgroundImages: string[];
-  theme: 'light' | 'dark';
-  weddingQuote: string;
-}
+import { useState, useEffect } from 'react';
+import { WeddingSettings } from '@/lib/types';
+import { WeddingSettingsService } from '@/services/weddingSettingsService';
 
 const DEFAULT_SETTINGS: WeddingSettings = {
+  id: '',
   brideName: '新娘',
   groomName: '新郎',
   weddingDate: new Date(Date.now() + 365 * 24 * 60 * 60 * 1000).toISOString(), // 默认一年后
   backgroundImages: [
-    'https://images.unsplash.com/photo-1519741497674-611481863552?ixlib=rb-4.0.3&ixid=M3wxMjA3fDB8MHxwaG90by1wYWdlfHx8fGVufDB8fHx8fA%3D%3D&auto=format&fit=crop&w=2000&q=80',
-    'https://images.unsplash.com/photo-1516571749851-9cf07e95ff23?ixlib=rb-4.0.3&ixid=M3wxMjA3fDB8MHxwaG90by1wYWdlfHx8fGVufDB8fHx8fA%3D%3D&auto=format&fit=crop&w=2000&q=80',
-    'https://images.unsplash.com/photo-1469371670807-013ccf25f16a?ixlib=rb-4.0.3&ixid=M3wxMjA3fDB8MHxwaG90by1wYWdlfHx8fGVufDB8fHx8fA%3D%3D&auto=format&fit=crop&w=2000&q=80',
   ],
   theme: 'light',
-  weddingQuote: '执子之手，与子偕老'
+  weddingQuote: '执子之手，与子偕老',
+  userId: '',
+  createdAt: '',
+  updatedAt: '',
 };
 
 export function useWeddingSettings() {
-  const [settings, setSettings] = useState<WeddingSettings>(() => {
-    if (typeof window !== 'undefined') {
-      const savedSettings = localStorage.getItem('weddingSettings');
-      if (savedSettings) {
-        try {
-          return JSON.parse(savedSettings);
-        } catch (error) {
-          console.error('Error parsing wedding settings:', error);
-        }
+  const [settings, setSettings] = useState<WeddingSettings>(DEFAULT_SETTINGS);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    loadSettings();
+  }, []);
+
+  const loadSettings = async () => {
+    try {
+      setLoading(true);
+      setError(null);
+      const data = await WeddingSettingsService.getSettings();
+      if (data) {
+        setSettings(data);
+      } else {
+        // 如果没有设置，使用默认设置
+        setSettings(DEFAULT_SETTINGS);
       }
+    } catch (err) {
+      console.error('加载婚礼设置失败:', err);
+      setError(err instanceof Error ? err.message : '加载失败');
+      // 发生错误时使用默认设置
+      setSettings(DEFAULT_SETTINGS);
+    } finally {
+      setLoading(false);
     }
-    return DEFAULT_SETTINGS;
-  });
-
-  const updateSettings = (newSettings: Partial<WeddingSettings>) => {
-    const updatedSettings = { ...settings, ...newSettings };
-    setSettings(updatedSettings);
-    localStorage.setItem('weddingSettings', JSON.stringify(updatedSettings));
   };
 
-  const resetSettings = () => {
-    setSettings(DEFAULT_SETTINGS);
-    localStorage.removeItem('weddingSettings');
+  const updateSettings = async (newSettings: Partial<WeddingSettings>) => {
+    try {
+      setError(null);
+      // 如果没有ID，说明是首次创建，需要包含所有默认值
+      const updates = !settings.id
+        ? { ...DEFAULT_SETTINGS, ...newSettings }
+        : newSettings;
+
+      const updatedSettings = await WeddingSettingsService.updateSettings(updates);
+      setSettings(updatedSettings);
+    } catch (err) {
+      console.error('更新婚礼设置失败:', err);
+      setError(err instanceof Error ? err.message : '更新失败');
+      throw err;
+    }
   };
 
-  return { settings, updateSettings, resetSettings };
+  const resetSettings = async () => {
+    try {
+      setError(null);
+      if (settings.id) {
+        await WeddingSettingsService.deleteSettings();
+      }
+      setSettings(DEFAULT_SETTINGS);
+    } catch (err) {
+      console.error('重置婚礼设置失败:', err);
+      setError(err instanceof Error ? err.message : '重置失败');
+      throw err;
+    }
+  };
+
+  return {
+    settings,
+    updateSettings,
+    resetSettings,
+    loading,
+    error,
+    refetch: loadSettings
+  };
 }

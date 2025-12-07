@@ -1,7 +1,7 @@
 'use client';
 
 import { useState } from 'react';
-import { Todo } from '@/hooks/useTodoList';
+import { Todo } from '@/lib/types';
 
 interface TodoItemProps {
   todo: Todo;
@@ -23,8 +23,8 @@ export default function TodoItem({
   const [expanded, setExpanded] = useState(true);
 
   const hasChildren = todo.children && todo.children.length > 0;
-  const completedSubtasks = hasChildren ? todo.children.filter(child => child.completed).length : 0;
-  const progressPercent = hasChildren ? (completedSubtasks / todo.children.length) * 100 : 0;
+  const completedSubtasks = hasChildren ? todo.children!.filter(child => child.completed).length : 0;
+  const progressPercent = hasChildren ? (completedSubtasks / todo.children!.length) * 100 : 0;
 
   const handleAddSubtask = (e: React.FormEvent) => {
     e.preventDefault();
@@ -160,46 +160,19 @@ export default function TodoItem({
           )}
         </div>
 
-        {/* 子任务列表 - 在同一个框内 */}
+        {/* 子任务列表 - 递归渲染TodoItem */}
         {hasChildren && expanded && (
           <div className="subtasks-container border-t border-stone-200 bg-stone-50 bg-opacity-50">
-            <div className="p-4 space-y-2">
+            <div className="p-2 space-y-2">
               {todo.children?.map((child) => (
-                <div key={child.id} className="flex items-center gap-2 p-2 bg-white rounded-lg">
-                  {/* 完成状态复选框 */}
-                  <button
-                    onClick={() => onToggle(child.id)}
-                    className={`w-4 h-4 rounded-full border-2 transition-all ${
-                      child.completed
-                        ? 'bg-green-500 border-green-500 flex items-center justify-center'
-                        : 'border-stone-300 hover:border-stone-400'
-                    }`}
-                  >
-                    {child.completed && (
-                      <svg className="w-2.5 h-2.5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" />
-                      </svg>
-                    )}
-                  </button>
-
-                  {/* 子任务文本 */}
-                  <span className={`text-sm flex-1 ${
-                    child.completed ? 'line-through text-stone-500' : 'text-stone-700'
-                  }`}>
-                    {child.text}
-                  </span>
-
-                  {/* 删除按钮 */}
-                  <button
-                    onClick={() => onDelete(child.id)}
-                    className="p-1 text-stone-400 hover:text-red-500 transition-colors"
-                    title="删除子任务"
-                  >
-                    <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                    </svg>
-                  </button>
-                </div>
+                <TodoItem
+                  key={child.id}
+                  todo={child}
+                  level={level + 1}
+                  onToggle={onToggle}
+                  onDelete={onDelete}
+                  onAddSubtask={onAddSubtask}
+                />
               ))}
             </div>
           </div>

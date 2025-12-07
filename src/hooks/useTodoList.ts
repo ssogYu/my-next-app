@@ -1,80 +1,70 @@
 "use client";
 
-import { useState } from 'react';
-
-// 默认婚礼任务分类
-const DEFAULT_CATEGORIES: TodoCategory[] = [
-  { id: 'wedding-venue', name: '场地布置', color: 'rose', icon: '🏰', order: 1 },
-  { id: 'wedding-clothes', name: '服装造型', color: 'pink', icon: '👗', order: 2 },
-  { id: 'wedding-photo', name: '摄影摄像', color: 'purple', icon: '📸', order: 3 },
-  { id: 'wedding-guests', name: '宾客邀请', color: 'blue', icon: '👥', order: 4 },
-  { id: 'wedding-food', name: '餐饮服务', color: 'orange', icon: '🍰', order: 5 },
-  { id: 'wedding-music', name: '音乐娱乐', color: 'green', icon: '🎵', order: 6 },
-  { id: 'wedding-docs', name: '证件文书', color: 'gray', icon: '📋', order: 7 },
-  { id: 'wedding-other', name: '其他事项', color: 'indigo', icon: '📦', order: 8 }
-];
-
-export interface TodoCategory {
-  id: string;
-  name: string;
-  color: string;
-  icon: string;
-  order: number;
-}
-
-export interface Todo {
-  id: string;
-  text: string;
-  completed: boolean;
-  createdAt: string;
-  categoryId: string;
-  priority: 'high' | 'medium' | 'low';
-  parentId?: string;
-  children?: Todo[];
-  notes?: string;
-  dueDate?: string;
-}
+import { useState, useEffect } from 'react';
+import { Todo, TodoCategory, TodoStats } from '@/lib/types';
+import { TodoService } from '@/services/todoService';
 
 export function useTodoList() {
-  const [todos, setTodos] = useState<Todo[]>(() => {
-    if (typeof window !== 'undefined') {
-      const savedTodos = localStorage.getItem('weddingTodos');
-      if (savedTodos) {
-        try {
-          return JSON.parse(savedTodos);
-        } catch (error) {
-          console.error('Error parsing todos:', error);
-        }
-      }
-    }
-    return [];
-  });
+  const [todos, setTodos] = useState<Todo[]>([]);
+  const [categories, setCategories] = useState<TodoCategory[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
-  const [categories, setCategories] = useState<TodoCategory[]>(() => {
-    if (typeof window !== 'undefined') {
-      const savedCategories = localStorage.getItem('weddingCategories');
-      if (savedCategories) {
-        try {
-          return JSON.parse(savedCategories);
-        } catch (error) {
-          console.error('Error parsing categories:', error);
-        }
-      }
-    }
-    return DEFAULT_CATEGORIES;
-  });
+  useEffect(() => {
+    loadData();
+  }, []);
 
-  const saveTodos = (newTodos: Todo[]) => {
-    setTodos(newTodos);
-    localStorage.setItem('weddingTodos', JSON.stringify(newTodos));
+  // 构建任务层级结构
+  const buildTodoHierarchy = (flatTodos: Todo[]): Todo[] => {
+    const todoMap = new Map<string, Todo>();
+    const rootTodos: Todo[] = [];
+
+    // 创建所有任务的映射
+    flatTodos.forEach(todo => {
+      todoMap.set(todo.id, { ...todo, children: [] });
+    });
+
+    // 构建层级关系
+    flatTodos.forEach(todo => {
+      const todoWithChildren = todoMap.get(todo.id)!;
+      if (todo.parentId) {
+        const parent = todoMap.get(todo.parentId);
+        if (parent) {
+          parent.children = parent.children || [];
+          parent.children.push(todoWithChildren);
+        } else {
+          // 如果找不到父任务，作为根任务处理
+          rootTodos.push(todoWithChildren);
+        }
+      } else {
+        // 根任务
+        rootTodos.push(todoWithChildren);
+      }
+    });
+
+    return rootTodos;
   };
 
-  const saveCategories = (newCategories: TodoCategory[]) => {
-    setCategories(newCategories);
-    localStorage.setItem('weddingCategories', JSON.stringify(newCategories));
+  const loadData = async () => {
+    try {
+      setLoading(true);
+      setError(null);
+      const [todosData, categoriesData] = await Promise.all([
+        TodoService.getTodos(),
+        TodoService.getCategories()
+      ]);
+      const hierarchicalTodos = buildTodoHierarchy(todosData);
+      setTodos(hierarchicalTodos);
+      setCategories(categoriesData);
+    } catch (err) {
+      console.error('加载数据失败:', err);
+      setError(err instanceof Error ? err.message : '加载失败');
+    } finally {
+      setLoading(false);
+    }
   };
 
-  const addTodo = (
+  const addTodo = async (
     text: string,
     categoryId: string = 'wedding-other',
     priority?: Todo['priority'],
@@ -82,202 +72,147 @@ export function useTodoList() {
     notes?: string,
     dueDate?: string
   ) => {
-    const newTodo: Todo = {
-      id: Date.now().toString() + Math.random().toString(36).substr(2, 9),
-      text,
-      completed: false,
-      createdAt: new Date().toISOString(),
-      categoryId,
-      priority: priority || 'medium',
-      parentId,
-      notes,
-      dueDate
-    };
-
-    if (parentId) {
-      // 如果是子任务，需要更新父任务
-      const updatedTodos = todos.map(todo => {
-        if (todo.id === parentId) {
-          return {
-            ...todo,
-            children: [...(todo.children || []), newTodo]
-          };
-        }
-        return todo;
+    try {
+      setError(null);
+      await TodoService.createTodo({
+        text,
+        categoryId,
+        priority: priority || 'medium',
+        parentId,
+        notes,
+        dueDate
       });
-      saveTodos(updatedTodos);
-    } else {
-      saveTodos([...todos, newTodo]);
+      // 重新加载数据以构建正确的层级结构
+      await loadData();
+    } catch (err) {
+      console.error('创建任务失败:', err);
+      setError(err instanceof Error ? err.message : '创建失败');
+      throw err;
     }
   };
 
-  const addCategory = (name: string, color: string = 'gray', icon: string = '📦') => {
-    const newCategory: TodoCategory = {
-      id: Date.now().toString() + Math.random().toString(36).substr(2, 9),
-      name,
-      color,
-      icon,
-      order: categories.length + 1
-    };
-    saveCategories([...categories, newCategory]);
+  const addCategory = async (name: string, color: string = 'gray', icon: string = '📦') => {
+    try {
+      setError(null);
+      // 获取当前最大order
+      const maxOrder = categories.length > 0 ? Math.max(...categories.map(c => c.order)) : 0;
+      const newCategory = await TodoService.createCategory({
+        name,
+        color,
+        icon,
+        order: maxOrder + 1
+      });
+      setCategories(prev => [...prev, newCategory]);
+    } catch (err) {
+      console.error('创建分类失败:', err);
+      setError(err instanceof Error ? err.message : '创建失败');
+      throw err;
+    }
   };
 
-  const toggleTodo = (id: string) => {
-    const updateParentCompletion = (todo: Todo): Todo => {
-      // 如果有子任务，检查是否所有子任务都完成
-      if (todo.children && todo.children.length > 0) {
-        const allChildrenCompleted = todo.children.every(child => child.completed);
-        return { ...todo, completed: allChildrenCompleted };
-      }
-      return todo;
-    };
-
-    const toggleTodoRecursive = (todo: Todo): Todo => {
-      if (todo.id === id) {
-        // 如果是子任务，直接切换
-        if (todo.parentId) {
-          return { ...todo, completed: !todo.completed };
+  const toggleTodo = async (id: string) => {
+    try {
+      setError(null);
+      const findTodoInHierarchy = (todoList: Todo[], targetId: string): Todo | null => {
+        for (const todo of todoList) {
+          if (todo.id === targetId) return todo;
+          if (todo.children) {
+            const found = findTodoInHierarchy(todo.children, targetId);
+            if (found) return found;
+          }
         }
-        // 如果是父任务，切换自己的状态（但要基于子任务状态）
-        const toggledTodo = { ...todo, completed: !todo.completed };
-        return toggledTodo;
-      }
-
-      // 递归处理子任务
-      if (todo.children) {
-        const updatedChildren = todo.children.map(toggleTodoRecursive);
-        const updatedTodo = { ...todo, children: updatedChildren };
-
-        // 更新父任务的完成状态
-        return updateParentCompletion(updatedTodo);
-      }
-      return todo;
-    };
-
-    saveTodos(todos.map(toggleTodoRecursive));
-  };
-
-  const deleteTodo = (id: string) => {
-    const deleteTodoRecursive = (todo: Todo): Todo | null => {
-      // 如果当前任务就是要删除的任务
-      if (todo.id === id) {
         return null;
-      }
-      // 如果有子任务，递归处理
-      if (todo.children) {
-        const filteredChildren = todo.children
-          .map(deleteTodoRecursive)
-          .filter((child): child is Todo => child !== null);
-        return { ...todo, children: filteredChildren };
-      }
-      return todo;
-    };
-
-    const filteredTodos = todos
-      .map(deleteTodoRecursive)
-      .filter((todo): todo is Todo => todo !== null);
-    saveTodos(filteredTodos);
-  };
-
-  const updateTodo = (id: string, updates: Partial<Todo>) => {
-    const updateTodoRecursive = (todo: Todo): Todo => {
-      if (todo.id === id) {
-        return { ...todo, ...updates };
-      }
-      if (todo.children) {
-        return {
-          ...todo,
-          children: todo.children.map(updateTodoRecursive)
-        };
-      }
-      return todo;
-    };
-
-    saveTodos(todos.map(updateTodoRecursive));
-  };
-
-  const clearCompleted = () => {
-    const clearCompletedRecursive = (todo: Todo): Todo | null => {
-      // 如果任务已完成，删除它（包括子任务）
-      if (todo.completed) {
-        return null;
-      }
-      // 如果有子任务，递归清理已完成的子任务
-      if (todo.children) {
-        const filteredChildren = todo.children
-          .map(clearCompletedRecursive)
-          .filter((child): child is Todo => child !== null);
-        return { ...todo, children: filteredChildren };
-      }
-      return todo;
-    };
-
-    const filteredTodos = todos
-      .map(clearCompletedRecursive)
-      .filter((todo): todo is Todo => todo !== null);
-    saveTodos(filteredTodos);
-  };
-
-  const getStats = () => {
-    const countTodos = (todo: Todo, includeChildren: boolean = true): { total: number; completed: number; pending: number } => {
-      const isCompleted = todo.completed ? 1 : 0;
-      const isPending = todo.completed ? 0 : 1;
-
-      let childrenStats = { total: 0, completed: 0, pending: 0 };
-      if (includeChildren && todo.children) {
-        childrenStats = todo.children.reduce(
-          (acc, child) => {
-            const childStats = countTodos(child, includeChildren);
-            return {
-              total: acc.total + childStats.total,
-              completed: acc.completed + childStats.completed,
-              pending: acc.pending + childStats.pending
-            };
-          },
-          { total: 0, completed: 0, pending: 0 }
-        );
-      }
-
-      return {
-        total: 1 + childrenStats.total,
-        completed: isCompleted + childrenStats.completed,
-        pending: isPending + childrenStats.pending
       };
+
+      const todo = findTodoInHierarchy(todos, id);
+      if (!todo) return;
+
+      await TodoService.updateTodo(id, {
+        completed: !todo.completed
+      });
+      // 重新加载数据以保持层级结构
+      await loadData();
+    } catch (err) {
+      console.error('更新任务失败:', err);
+      setError(err instanceof Error ? err.message : '更新失败');
+      throw err;
+    }
+  };
+
+  const deleteTodo = async (id: string) => {
+    try {
+      setError(null);
+      await TodoService.deleteTodo(id);
+      // 重新加载数据以保持层级结构
+      await loadData();
+    } catch (err) {
+      console.error('删除任务失败:', err);
+      setError(err instanceof Error ? err.message : '删除失败');
+      throw err;
+    }
+  };
+
+  const updateTodo = async (id: string, updates: Partial<Todo>) => {
+    try {
+      setError(null);
+      await TodoService.updateTodo(id, updates);
+      // 重新加载数据以保持层级结构
+      await loadData();
+    } catch (err) {
+      console.error('更新任务失败:', err);
+      setError(err instanceof Error ? err.message : '更新失败');
+      throw err;
+    }
+  };
+
+  const clearCompleted = async () => {
+    try {
+      setError(null);
+      const completedTodos = todos.filter(t => t.completed);
+      await Promise.all(completedTodos.map(todo => TodoService.deleteTodo(todo.id)));
+      setTodos(prev => prev.filter(t => !t.completed));
+    } catch (err) {
+      console.error('清除已完成任务失败:', err);
+      setError(err instanceof Error ? err.message : '清除失败');
+      throw err;
+    }
+  };
+
+  // 扁平化层级结构中的所有任务
+  const flattenTodos = (todoList: Todo[]): Todo[] => {
+    const result: Todo[] = [];
+    const traverse = (todos: Todo[]) => {
+      todos.forEach(todo => {
+        result.push(todo);
+        if (todo.children) {
+          traverse(todo.children);
+        }
+      });
+    };
+    traverse(todoList);
+    return result;
+  };
+
+  const getStats = (): TodoStats => {
+    const allTodos = flattenTodos(todos);
+    const stats = {
+      total: allTodos.length,
+      completed: allTodos.filter(t => t.completed).length,
+      pending: allTodos.filter(t => !t.completed).length,
+      byCategory: {} as Record<string, { total: number; completed: number; pending: number }>
     };
 
-    const allStats = todos.reduce(
-      (acc, todo) => {
-        const todoStats = countTodos(todo);
-        return {
-          total: acc.total + todoStats.total,
-          completed: acc.completed + todoStats.completed,
-          pending: acc.pending + todoStats.pending
-        };
-      },
-      { total: 0, completed: 0, pending: 0 }
-    );
+    // 按分类统计
+    categories.forEach(category => {
+      const categoryTodos = allTodos.filter(t => t.categoryId === category.id);
+      stats.byCategory[category.id] = {
+        total: categoryTodos.length,
+        completed: categoryTodos.filter(t => t.completed).length,
+        pending: categoryTodos.filter(t => !t.completed).length
+      };
+    });
 
-    const byCategory = categories.reduce((acc, category) => {
-      const categoryTodos = todos.filter(todo => todo.categoryId === category.id);
-      const categoryStats = categoryTodos.reduce(
-        (acc, todo) => {
-          const todoStats = countTodos(todo);
-          return {
-            total: acc.total + todoStats.total,
-            completed: acc.completed + todoStats.completed,
-            pending: acc.pending + todoStats.pending
-          };
-        },
-        { total: 0, completed: 0, pending: 0 }
-      );
-      acc[category.id] = categoryStats;
-      return acc;
-    }, {} as Record<string, { total: number; completed: number; pending: number }>);
-
-    return {
-      ...allStats,
-      byCategory
-    };
+    return stats;
   };
 
   const getTodosByCategory = () => {
@@ -290,9 +225,15 @@ export function useTodoList() {
     });
   };
 
+  const refetch = () => {
+    loadData();
+  };
+
   return {
     todos,
     categories,
+    loading,
+    error,
     addTodo,
     addCategory,
     toggleTodo,
@@ -300,6 +241,7 @@ export function useTodoList() {
     updateTodo,
     clearCompleted,
     getStats,
-    getTodosByCategory
+    getTodosByCategory,
+    refetch
   };
 }

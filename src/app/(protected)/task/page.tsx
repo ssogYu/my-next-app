@@ -1,7 +1,8 @@
 "use client";
 
 import { useState } from 'react';
-import { useTodoList, Todo } from "@/hooks/useTodoList";
+import { useTodoList } from "@/hooks/useTodoList";
+import { Todo } from "@/lib/types";
 import TodoItem from "@/components/TodoItem";
 
 export default function TaskPage() {
