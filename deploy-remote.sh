@@ -10,13 +10,20 @@ SERVER_IP="47.100.82.151"
 SERVER_USER="root"
 PROJECT_PATH="/var/www/my-next-app"
 
-# 检查 SSH 连接
-echo "[0/2] 检查 SSH 连接..."
-if ! ssh -o ConnectTimeout=5 $SERVER_USER@$SERVER_IP "echo 'SSH连接成功'" > /dev/null 2>&1; then
-    echo "❌ 无法连接到服务器 $SERVER_IP"
+# 使用 SSH ControlMaster 建立复用连接，避免多次输入密码
+CONTROL_DIR="$HOME/.ssh/controlmasters"
+CONTROL_PATH="$CONTROL_DIR/cm-%r@%h:%p"
+mkdir -p "$CONTROL_DIR"
+
+echo "[0/2] 建立 SSH 控制主连接（可能会要求输入一次密码）..."
+# -Nf: 不执行远程命令，后台运行
+ssh -o ControlMaster=auto -o ControlPath="$CONTROL_PATH" -o ControlPersist=600 -Nf $SERVER_USER@$SERVER_IP
+if [ $? -ne 0 ]; then
+    echo "❌ 无法建立 SSH 主连接 $SERVER_USER@$SERVER_IP"
+    echo "请检查网络或使用 SSH 密钥免密登录"
     exit 1
 fi
-echo "✅ SSH 连接成功"
+echo "✅ SSH 主连接已建立，后续连接将复用该连接（不再重复询问密码）"
 
 # 提示用户
 echo ""
@@ -34,10 +41,10 @@ if [[ ! $REPLY =~ ^[Yy]$ ]]; then
     exit 1
 fi
 
-# 执行远程部署脚本
+# 执行远程部署命令，所有 ssh 连接使用 ControlPath 复用主连接
 echo ""
-echo "[1/2] 连接到服务器并执行部署..."
-ssh $SERVER_USER@$SERVER_IP << "DEPLOY_SCRIPT"
+echo "[1/2] 使用复用连接执行远程部署..."
+ssh -o ControlPath="$CONTROL_PATH" $SERVER_USER@$SERVER_IP bash -s << 'DEPLOY_SCRIPT'
 #!/bin/bash
 set -e
 cd /var/www/my-next-app
@@ -84,3 +91,8 @@ else
     echo "❌ 部署失败，请检查错误信息"
     exit 1
 fi
+
+# 关闭 ControlMaster 主连接，以释放资源
+echo "[2/2] 关闭 SSH 控制主连接..."
+ssh -O exit -o ControlPath="$CONTROL_PATH" $SERVER_USER@$SERVER_IP 2>/dev/null || true
+echo "✅ 控制连接已关闭"
